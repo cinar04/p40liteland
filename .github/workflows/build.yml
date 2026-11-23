@@ -5,6 +5,9 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -27,3 +30,17 @@ jobs:
         with:
           name: DinamikAda-APK
           path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: GitHub Releases'e yayinla
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APK_PATH: app/build/outputs/apk/debug/app-debug.apk
+        run: |
+          TAG="v1.0.${{ github.run_number }}"
+          gh release create "$TAG" "$APK_PATH" \
+            --repo "${{ github.repository }}" \
+            --title "Dinamik Ada v1.0 (Build ${{ github.run_number }})" \
+            --notes "Derleme tarihi: $(date -u +'%Y-%m-%d %H:%M UTC')
+
+Commit: ${{ github.sha }}" \
+            --target "${{ github.sha }}"
