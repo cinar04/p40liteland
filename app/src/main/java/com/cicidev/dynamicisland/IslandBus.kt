@@ -1,0 +1,48 @@
+package com.cicidev.dynamicisland
+
+import android.app.PendingIntent
+import android.media.session.MediaController
+import android.os.Handler
+import android.os.Looper
+
+/** Adada gösterilecek tek bir olay (bildirim, müzik, zamanlayıcı...). */
+data class IslandItem(
+    val key: String,
+    val emoji: String,
+    val title: String,
+    val subtitle: String = "",
+    val priority: Int = 10,        // yüksek olan öne çıkar
+    val ttlMs: Long = 0L,          // 0 = kalıcı, >0 = süre sonra kaybolur
+    val pop: Boolean = false,      // true = genişleyerek "pat" diye açılır
+    val action: PendingIntent? = null,
+    val media: MediaController? = null,
+    val stamp: Long = 0L,
+    val expireAt: Long = 0L
+)
+
+/** Tüm kaynakların (bildirim, müzik, şarj, arama, zamanlayıcı) ortak noktası. */
+object IslandBus {
+    private val main = Handler(Looper.getMainLooper())
+    private val items = LinkedHashMap<String, IslandItem>()
+    private var counter = 0L
+    @Volatile var onChange: (() -> Unit)? = null
+
+    fun put(item: IslandItem) {
+        main.post {
+            counter++
+            val exp = if (item.ttlMs > 0) System.currentTimeMillis() + item.ttlMs else 0L
+            items[item.key] = item.copy(stamp = counter, expireAt = exp)
+            onChange?.invoke()
+        }
+    }
+
+    fun remove(key: String) {
+        main.post { if (items.remove(key) != null) onChange?.invoke() }
+    }
+
+    fun top(): IslandItem? {
+        val now = System.currentTimeMillis()
+        items.values.removeAll { it.expireAt in 1..now }
+        return items.values.maxByOrNull { it.priority }
+    }
+}
