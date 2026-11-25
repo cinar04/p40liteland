@@ -11,8 +11,8 @@ android {
         applicationId = "com.cicidev.dynamicisland"
         minSdk = 26          // Android 8+
         targetSdk = 29       // P40 Lite = Android 10 (EMUI 10), kısıtlamasız çalışsın
-        versionCode = 3
-        versionName = "2.1"
+        versionCode = 4
+        versionName = "3.0"
     }
 
     compileOptions {

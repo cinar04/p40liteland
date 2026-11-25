@@ -31,8 +31,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp app/build/outputs/apk/debug/app-debug.apk DinamikAda.apk
-          gh release create "v2.${{ github.run_number }}" DinamikAda.apk \
+          gh release create "v3.${{ github.run_number }}" DinamikAda.apk \
             --repo "${{ github.repository }}" \
             --target "${{ github.sha }}" \
-            --title "Dinamik Ada v2.${{ github.run_number }}" \
+            --title "Dinamik Ada v3.${{ github.run_number }}" \
             --notes "Huawei P40 Lite icin Dinamik Ada APK"

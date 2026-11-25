@@ -1,10 +1,9 @@
-# 🏝️ Dinamik Ada v2.1 (Huawei P40 Lite)
+# 🏝️ Dinamik Ada v3 (Huawei P40 Lite)
 
 Google servisi (GMS) gerektirmez, dış kütüphane yok.
 
-- Modern görünüm: degrade zemin, olaya göre renkli parlayan kenarlık, zıplayarak inen animasyon
-- Müzik: albüm kapağı, ekolayzır, ilerleme çubuğu, kontroller
-- Zamanlayıcı/pil: dairesel ilerleme halkası, −1 dk / İptal / +1 dk
-- Bildirim, arama, şarj, kronometre, Bluetooth/kulaklık/sessiz mod/uçak modu olayları
-- Boşta saat / pil / saat+pil, çoklu olay kuyruğu, jestler, sürükle-bırak konum
-- "Bildirimleri üstte göster" anahtarı: açık = sistem gösterir, kapalı = sadece adada
+v3: adım adım kurulum sihirbazı, ana ekran + ayrı ayar ekranları,
+indirme/ilerleme halkası, çift ada (yan daire), fener göstergesi,
+uygulama bazlı ada rengi, kamera/mikrofon göstergesi.
+
+APK: GitHub'a push -> Actions derler -> Releases'te DinamikAda.apk çıkar.

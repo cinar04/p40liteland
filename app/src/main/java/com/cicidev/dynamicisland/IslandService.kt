@@ -17,7 +17,9 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.hardware.camera2.CameraManager
 import android.media.AudioManager
+import android.media.AudioRecordingConfiguration
 import android.media.MediaMetadata
 import android.media.session.PlaybackState
 import android.os.BatteryManager
@@ -89,6 +91,18 @@ class IslandService : Service() {
     private var bgAccent = Int.MIN_VALUE
     private var controlsFor = ""
 
+    // yan ada (ikinci olay için küçük daire)
+    private lateinit var satRoot: FrameLayout
+    private lateinit var satRing: RingView
+    private lateinit var satEmoji: TextView
+    private lateinit var satLp: WindowManager.LayoutParams
+
+    // fener / kamera / mikrofon
+    private var camMgr: CameraManager? = null
+    private var audioMgr: AudioManager? = null
+    private val busyCams = HashSet<String>()
+    private var torchOn = false
+
     // dokunma / sürükleme durumu
     private var touchSlop = 8
     private var downX = 0f
@@ -153,6 +167,20 @@ class IslandService : Service() {
         lp.layoutInDisplayCutoutMode =
             WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         wm.addView(root, lp)
+        satLp = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        )
+        satLp.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+        satLp.layoutInDisplayCutoutMode =
+            WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        wm.addView(satRoot, satLp)
         applyLayout()
 
         IslandBus.onChange = { render() }
@@ -171,6 +199,15 @@ class IslandService : Service() {
             addAction(Intent.ACTION_HEADSET_PLUG)
         })
         startPhone()
+        try {
+            camMgr = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            camMgr?.registerAvailabilityCallback(camCb, ui)
+            camMgr?.registerTorchCallback(torchCb, ui)
+        } catch (_: Exception) {}
+        try {
+            audioMgr = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            audioMgr?.registerAudioRecordingCallback(recCb, ui)
+        } catch (_: Exception) {}
 
         ready = true
         SysNotif.sync(this)
@@ -200,6 +237,10 @@ class IslandService : Service() {
             try { unregisterReceiver(sysRx) } catch (_: Exception) {}
             try { phone?.listen(phoneL, PhoneStateListener.LISTEN_NONE) } catch (_: Exception) {}
             try { wm.removeView(root) } catch (_: Exception) {}
+            try { camMgr?.unregisterAvailabilityCallback(camCb) } catch (_: Exception) {}
+            try { camMgr?.unregisterTorchCallback(torchCb) } catch (_: Exception) {}
+            try { audioMgr?.unregisterAudioRecordingCallback(recCb) } catch (_: Exception) {}
+            try { wm.removeView(satRoot) } catch (_: Exception) {}
             SysNotif.restore(this)
         }
         instance = null
@@ -293,6 +334,16 @@ class IslandService : Service() {
         root.addView(tvSub, LinearLayout.LayoutParams(mp, wp).apply { topMargin = dp(4) })
         root.addView(progress, LinearLayout.LayoutParams(mp, dp(4)).apply { topMargin = dp(8) })
         root.addView(controls, LinearLayout.LayoutParams(mp, wp).apply { topMargin = dp(8) })
+        root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateSat() }
+
+        satRoot = FrameLayout(this).apply {
+            visibility = View.GONE
+            setOnClickListener { swapSat() }
+        }
+        satRing = RingView(this).apply { visibility = View.GONE }
+        satEmoji = TextView(this).apply { gravity = Gravity.CENTER }
+        satRoot.addView(satRing, FrameLayout.LayoutParams(mp, mp))
+        satRoot.addView(satEmoji, FrameLayout.LayoutParams(wp, wp, Gravity.CENTER))
 
         // Jestler: dokun, çift dokun, uzun bas+sürükle, kaydır
         root.setOnTouchListener { _, ev ->
@@ -314,6 +365,7 @@ class IslandService : Service() {
                         lp.x = (startX + dx).toInt().coerceIn(-maxX, maxX)
                         lp.y = (startY + dy).toInt().coerceIn(0, m.heightPixels - dp(80))
                         wm.updateViewLayout(root, lp)
+                        updateSat()
                     } else if (abs(dx) > touchSlop || abs(dy) > touchSlop) {
                         ui.removeCallbacks(longRun)
                     }
@@ -377,6 +429,7 @@ class IslandService : Service() {
                 addCtl("+1 dk") { adjustTimer(60) }
             }
             item.key == "sw" -> addCtl("Durdur") { stopSw() }
+            item.key == "torch" -> addCtl("Kapat") { Torch.set(this, false) }
         }
     }
 
@@ -445,6 +498,13 @@ class IslandService : Service() {
         eq.layoutParams = LinearLayout.LayoutParams(dpf(20f * s), dpf(16f * s)).apply {
             leftMargin = dpf(8f * s)
         }
+        val base = themes[prefs().getInt("theme", 0).coerceIn(0, themes.size - 1)]
+        val alpha = prefs().getInt("opacity", 100).coerceIn(30, 100) * 255 / 100
+        satRoot.background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor((base and 0x00FFFFFF) or (alpha shl 24))
+            if (prefs().getBoolean("border", true)) setStroke(dp(1), 0x66FFFFFF)
+        }
     }
 
     /** Konum ayarlarını uygula (ox: ortadan yatay kayma dp, oy: üstten dp). */
@@ -484,6 +544,106 @@ class IslandService : Service() {
     private fun scheduleCollapse() {
         ui.removeCallbacks(collapseRun)
         ui.postDelayed(collapseRun, 4500)
+    }
+
+    // ───────────────────────── yan ada ─────────────────────────
+
+    private fun swapSat() {
+        val n = IslandBus.all().size
+        if (n < 2) return
+        index = (index + 1) % n
+        haptic()
+        render()
+        bounce()
+    }
+
+    /** İkinci olayı ana adanın yanında küçük daire olarak göster. */
+    private fun updateSat() {
+        if (!ready || !::satRoot.isInitialized) return
+        val list = IslandBus.all()
+        val show = prefs().getBoolean("dual", true) && !expanded && list.size >= 2 &&
+            root.visibility == View.VISIBLE && current != null
+        if (!show) {
+            if (satRoot.visibility != View.GONE) satRoot.visibility = View.GONE
+            return
+        }
+        val other = list[(index + 1) % list.size]
+        val s = sc()
+        val acc = accentFor(other)
+        val tint = if (acc != 0) acc else Color.WHITE
+        val size = dpf(40f * s)
+        satRoot.minimumWidth = size
+        satRoot.minimumHeight = size
+        satEmoji.text = other.emoji
+        satEmoji.textSize = 17f * s
+        if (other.ring >= 0f) {
+            satRing.visibility = View.VISIBLE
+            satRing.color = tint
+            satRing.fraction = other.ring
+        } else {
+            satRing.visibility = View.GONE
+        }
+        val gap = dp(8)
+        val rw = if (root.width > 0) root.width else dpf(156f * s)
+        val rh = if (root.height > 0) root.height else dpf(40f * s)
+        val half = resources.displayMetrics.widthPixels / 2
+        var x = lp.x + rw / 2 + gap + size / 2
+        if (x + size / 2 > half - dp(4)) x = lp.x - rw / 2 - gap - size / 2
+        satLp.x = x
+        satLp.y = lp.y + (rh - size) / 2
+        if (satRoot.visibility != View.VISIBLE) satRoot.visibility = View.VISIBLE
+        try { wm.updateViewLayout(satRoot, satLp) } catch (_: Exception) {}
+    }
+
+    // ───────────────────────── fener / kamera / mikrofon ─────────────────────────
+
+    private val camCb = object : CameraManager.AvailabilityCallback() {
+        override fun onCameraUnavailable(cameraId: String) { busyCams.add(cameraId); updateCam() }
+        override fun onCameraAvailable(cameraId: String) { busyCams.remove(cameraId); updateCam() }
+    }
+
+    private val torchCb = object : CameraManager.TorchCallback() {
+        override fun onTorchModeChanged(cameraId: String, enabled: Boolean) {
+            torchOn = enabled
+            updateTorch()
+            updateCam()
+        }
+    }
+
+    private val recCb = object : AudioManager.AudioRecordingCallback() {
+        override fun onRecordingConfigChanged(configs: MutableList<AudioRecordingConfiguration>?) {
+            if (!prefs().getBoolean("src_privacy", true) || configs.isNullOrEmpty()) {
+                IslandBus.remove("mic")
+            } else {
+                IslandBus.put(
+                    IslandItem(key = "mic", emoji = "🎙️", title = "Mikrofon kullanılıyor",
+                        priority = 26, accent = 0xFFFF9F0A.toInt())
+                )
+            }
+        }
+    }
+
+    private fun updateTorch() {
+        if (!prefs().getBoolean("src_torch", true) || !torchOn) {
+            IslandBus.remove("torch")
+            return
+        }
+        IslandBus.put(
+            IslandItem(key = "torch", emoji = "🔦", title = "Fener açık",
+                subtitle = "Kapatmak için düğmeye bas", priority = 20, pop = true,
+                accent = 0xFFFFD60A.toInt())
+        )
+    }
+
+    private fun updateCam() {
+        if (!prefs().getBoolean("src_privacy", true) || busyCams.isEmpty() || torchOn) {
+            IslandBus.remove("cam")
+            return
+        }
+        IslandBus.put(
+            IslandItem(key = "cam", emoji = "📷", title = "Kamera kullanılıyor",
+                priority = 25, accent = 0xFF34C759.toInt())
+        )
     }
 
     // ───────────────────────── jestler ─────────────────────────
@@ -555,6 +715,7 @@ class IslandService : Service() {
     private fun renderIdle() {
         current = null
         eq.setActive(false)
+        if (::satRoot.isInitialized) satRoot.visibility = View.GONE
         if (!prefs().getBoolean("idle", true)) {
             root.visibility = View.GONE
             expanded = false
@@ -630,6 +791,12 @@ class IslandService : Service() {
             ring.color = tint
             ring.fraction = item.ring
         }
+        val im = if (hasRing && item.icon != null) dpf(6f * s) else 0
+        val ilp = ivIcon.layoutParams as FrameLayout.LayoutParams
+        if (ilp.leftMargin != im) {
+            ilp.setMargins(im, im, im, im)
+            ivIcon.layoutParams = ilp
+        }
         if (item.icon != null) {
             ivIcon.setImageDrawable(item.icon)
             ivIcon.visibility = View.VISIBLE
@@ -655,15 +822,18 @@ class IslandService : Service() {
         setControls(item)
         controls.visibility = if (expanded && controls.childCount > 0) View.VISIBLE else View.GONE
         val showMedia = expanded && item.media != null
-        progress.visibility = if (showMedia) View.VISIBLE else View.GONE
+        val showDl = expanded && item.key.startsWith("dl_") && item.ring >= 0f
+        progress.visibility = if (showMedia || showDl) View.VISIBLE else View.GONE
+        if (showMedia || showDl) progress.progressTintList = ColorStateList.valueOf(tint)
         if (showMedia) {
-            progress.progressTintList = ColorStateList.valueOf(tint)
             updateProgress()
             ui.postDelayed(progRun, 1000)
         }
+        if (showDl) progress.progress = (item.ring * 1000).toInt()
 
         root.visibility = View.VISIBLE
         if (wasHidden || popped) bounce()
+        updateSat()
 
         val next = list.filter { it.expireAt > 0 }.map { it.expireAt }.minOrNull()
         if (next != null) {

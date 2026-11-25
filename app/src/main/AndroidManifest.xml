@@ -24,6 +24,14 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".SetupActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".ScreenActivity"
+            android:exported="false" />
+
         <service
             android:name=".IslandService"
             android:exported="false" />
