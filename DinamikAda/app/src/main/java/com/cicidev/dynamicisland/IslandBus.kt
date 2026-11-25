@@ -25,6 +25,8 @@ data class IslandItem(
     val action: PendingIntent? = null,
     val media: MediaController? = null,
     val icon: Drawable? = null,    // albüm kapağı / uygulama ikonu
+    val ring: Float = -1f,         // 0..1 halka ilerlemesi, -1 = halka yok
+    val accent: Int = 0,           // 0 = otomatik renk
     val stamp: Long = 0L,
     val expireAt: Long = 0L
 )

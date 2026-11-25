@@ -60,6 +60,7 @@ class NotifListener : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification) {
         val p = Cfg.p(this)
         if (!p.getBoolean("src_notif", true)) return
+        if (p.getBoolean("sys_notif", false)) return   // sistem üstte gösteriyor, adada gösterme
         if (sbn.packageName == packageName) return
         val blocked = p.getStringSet("blocked", emptySet()) ?: emptySet()
         if (sbn.packageName in blocked) return

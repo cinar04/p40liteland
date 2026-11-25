@@ -197,7 +197,7 @@ class MainActivity : Activity() {
         })
 
         col.addView(tv("🏝️ Dinamik Ada", 30f, Color.WHITE, true))
-        col.addView(tv("v2.0 • Huawei P40 Lite için", 13f, cSub))
+        col.addView(tv("v2.1 • Huawei P40 Lite için", 13f, cSub))
 
         // 1) Durum ve izinler
         card("Durum ve izinler") {
@@ -236,7 +236,8 @@ class MainActivity : Activity() {
             sliderRow("Köşe yuvarlaklığı", "radius", 6, 30, 24)
             choiceRow("Renk", "theme", listOf("Siyah", "Lacivert", "Mor", "Yeşil", "Kırmızı"), 0)
             switchRow("Kenarlık çiz (siyah zeminde ada görünsün)", "border", true)
-            switchRow("Boşta saat göster (ada hep görünür)", "idle", true)
+            switchRow("Boşta kapsül göster (ada hep görünür)", "idle", true)
+            choiceRow("Boşta ne yazsın?", "idleMode", listOf("Saat", "Pil %", "Saat + Pil"), 0)
         }
 
         // 3) Konum
@@ -251,6 +252,36 @@ class MainActivity : Activity() {
             addView(tv("İpucu: adaya uzun basıp sürükleyerek de yerini değiştirebilirsin.", 12f, cSub))
         }
 
+        // 3.5) Bildirim gösterimi
+        card("🔔 Bildirim gösterimi") {
+            permRow("Rahatsız Etme erişimi (sistem bildirimini gizlemek için)", {
+                SysNotif.hasAccess(this@MainActivity)
+            }) { startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)) }
+            addView(Switch(this@MainActivity).apply {
+                text = "Bildirimleri üstte (sistem) göster"
+                textSize = 15f
+                setTextColor(Color.WHITE)
+                setPadding(0, dp(8), 0, dp(8))
+                isChecked = prefs.getBoolean("sys_notif", false)
+                setOnCheckedChangeListener { _, on ->
+                    prefs.edit().putBoolean("sys_notif", on).apply()
+                    if (!on && !SysNotif.hasAccess(this@MainActivity)) {
+                        toast("Bildirimleri sadece adada göstermek için Rahatsız Etme erişimini ver")
+                        startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
+                    }
+                    SysNotif.sync(this@MainActivity)
+                    IslandService.instance?.refreshStyle()
+                }
+            })
+            addView(tv(
+                "AÇIK: bildirimler sistemin üst panelinde çıkar, adada gösterilmez.\n" +
+                    "KAPALI: bildirimler sadece adada görünür, sistemin açılır bildirimi gizlenir. " +
+                    "Bunun için Rahatsız Etme erişimi gerekir. Bu modda bildirim sesleri susar, " +
+                    "aramalar, alarmlar ve medya normal çalışır. Bildirimler yine bildirim panelinde durur.",
+                12f, cSub
+            ))
+        }
+
         // 4) Davranış
         card("⚙️ Davranış") {
             sliderRow("Bildirim ekranda kalma süresi", "duration", 3, 15, 6, " sn")
@@ -263,6 +294,7 @@ class MainActivity : Activity() {
             switchRow("🎵 Müzik oynatıcı", "src_music", true)
             switchRow("⚡ Şarj durumu", "src_charge", true)
             switchRow("📞 Arama", "src_call", true)
+            switchRow("🎧 Sistem olayları (Bluetooth, sessiz mod, uçak modu, kulaklık)", "src_system", true)
             button("🚫 Bildirimi gösterilmeyecek uygulamalar", cChip) { pickBlockedApps() }
         }
 
@@ -308,6 +340,14 @@ class MainActivity : Activity() {
                 testOnly(IslandItem(key = "call", emoji = "📞", title = "Gelen arama",
                     subtitle = "Test araması", priority = 100, ttlMs = 6000, pop = true))
             }
+            button("🎧 Sistem olayı", cChip) {
+                testOnly(IslandItem(key = "sys", emoji = "🎧", title = "Kulaklık bağlandı",
+                    subtitle = "Bluetooth", priority = 60, ttlMs = 4000, pop = true))
+            }
+            button("⏱ 10 sn zamanlayıcı (halkalı)", cChip) {
+                if (IslandService.instance == null) toast("Önce adayı çalıştır")
+                else startIsland(IslandService.ACTION_TIMER, 10)
+            }
             button("🎵 Müzik", cChip) {
                 testOnly(IslandItem(key = "music", emoji = "🎵", title = "Test Şarkısı",
                     subtitle = "Test Sanatçı", priority = 30, ttlMs = 8000, pop = true))
@@ -323,7 +363,8 @@ class MainActivity : Activity() {
                     "• Yukarı kaydır: küçült (küçükken olayı sil)\n" +
                     "• Sağa / sola kaydır: sonraki veya önceki olay\n" +
                     "• Uzun bas + sürükle: adayı istediğin yere taşı\n" +
-                    "• Müzikte: ◀◀ ▶❚❚ ▶▶ ve ilerleme çubuğu",
+                    "• Müzikte: ◀◀ ▶❚❚ ▶▶, ekolayzır ve ilerleme çubuğu\n" +
+                    "• Zamanlayıcıda: halka, −1 dk / İptal / +1 dk",
                 14f, Color.WHITE
             ))
         }
